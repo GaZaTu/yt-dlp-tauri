@@ -1,0 +1,115 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run start",
+    "devPath": "http://127.0.0.1:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "ytdlptauri",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "os": {
+        "all": true
+      },
+      "path": {
+        "all": true
+      },
+      "fs": {
+        "all": true
+      },
+      "shell": {
+        "all": true,
+        "scope": [
+          {
+            "name": "bin/yt-dlp",
+            "sidecar": true,
+            "args": true
+          }
+        ]
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": [
+          "/**/*.png",
+          "/**/*.jpg",
+          "/**/*.webp",
+          "/**/*.avif",
+          "/**/*.jxl"
+        ]
+      },
+      "clipboard": {
+        "all": true
+      },
+      "dialog": {
+        "all": true
+      },
+      "http": {
+        "all": true,
+        "scope": [
+          "https://github.com/yt-dlp/yt-dlp/releases/latest/download/*"
+        ]
+      }
+    },
+    "bundle": {
+      "active": true,
+      "category": "DeveloperTool",
+      "copyright": "",
+      "deb": {
+        "depends": []
+      },
+      "externalBin": [
+        "bin/yt-dlp",
+        "bin/ffmpeg"
+      ],
+      "resources": [],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "identifier": "xyz.gazatu.ytdlptauri",
+      "longDescription": "",
+      "macOS": {
+        "entitlements": null,
+        "exceptionDomain": "",
+        "frameworks": [],
+        "providerShortName": null,
+        "signingIdentity": null
+      },
+      "shortDescription": "",
+      "targets": "all",
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": ""
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": true,
+      "dialog": true,
+      "endpoints": [
+        "https://dl.gazatu.xyz/releases/xyz.gazatu.ytdlptauri/latest/{{target}}?client-version={{current_version}}"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0ODhDRTVGQkE4MkVCMkYKUldRdjY0SzZYODZJWk5TSXpvakdwbTJRYUVlelNIY3VFYUNFZ1ZJaW5TTjhxY0M5OUg0L2JobW4K"
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "width": 1000,
+        "height": 800,
+        "resizable": false,
+        "title": "YT Downloader"
+      }
+    ]
+  }
+}

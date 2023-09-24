@@ -1,0 +1,88 @@
+@import "../node_modules/@gazatu/solid-spectre/dist/css/normalize.css";
+@import "../node_modules/@gazatu/solid-spectre/dist/css/base.css";
+@import "../node_modules/@gazatu/solid-spectre/dist/css/typography.css";
+@import "../node_modules/@gazatu/solid-spectre/dist/css/brutalist.css";
+
+html {
+  // Core colors
+  --primary--rgb-triplet: 138, 43, 226;
+  --primary-monochrome--rgb-triplet: 112, 26, 192;
+  --primary-text--rgb-triplet: 237, 237, 237;
+
+  --secondary--rgb-triplet: 226, 183, 43;
+  --secondary-monochrome--rgb-triplet: 192, 153, 26;
+  --secondary-text--rgb-triplet: 237, 237, 237;
+
+  --body-bg--rgb-triplet: 51, 51, 51;
+  --body-bg-monochrome--rgb-triplet: 77, 77, 77;
+  --body-fg--rgb-triplet: 250, 250, 250;
+  --body-fg-monochrome--rgb-triplet: 225, 225, 225;
+
+  // Control colors
+  --success--rgb-triplet: 50, 182, 67;
+  --success-monochrome--rgb-triplet: 77, 206, 94;
+  --success-text--rgb-triplet: 6, 6, 6;
+  --warning--rgb-triplet: 255, 183, 0;
+  --warning-monochrome--rgb-triplet: 255, 197, 51;
+  --warning-text--rgb-triplet: 6, 6, 6;
+  --failure--rgb-triplet: 232, 86, 0;
+  --failure-monochrome--rgb-triplet: 255, 112, 28;
+  --failure-text--rgb-triplet: 6, 6, 6;
+
+  // Other colors
+  --link--rgb-triplet: 74, 159, 255;
+  --link-monochrome--rgb-triplet: 18, 129, 255;
+  --link-text--rgb-triplet: 237, 237, 237;
+
+  --highlight--rgb-triplet: 255, 233, 179;
+  --highlight-text--rgb-triplet: 6, 6, 6;
+
+  --gray--rgb-triplet: 48, 55, 66;
+  --gray-text--rgb-triplet: 250, 250, 250;
+
+  // Custom
+  --appheader-bg: #3a3a3a;
+
+  &.light {
+    // Core colors
+    --body-bg--rgb-triplet: 255, 255, 255;
+    --body-bg-monochrome--rgb-triplet: 230, 230, 230;
+    --body-fg--rgb-triplet: 6, 6, 6;
+    --body-fg-monochrome--rgb-triplet: 32, 32, 32;
+
+    // Other colors
+    --link--rgb-triplet: 87, 85, 217;
+    --link-monochrome--rgb-triplet: 48, 46, 205;
+
+    --gray--rgb-triplet: 48, 55, 66;
+    --gray-text--rgb-triplet: 250, 250, 250;
+
+    // Custom
+    --appheader-bg: #f5f5f5;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow-y: scroll;
+}
+
+#root,
+#AppMain {
+  display: flex;
+  flex-direction: column;
+}
+
+#AppHeader,
+#AppHeader .menu {
+  background: var(--appheader-bg);
+}
+
+#AppMain {
+  flex-grow: 1;
+}

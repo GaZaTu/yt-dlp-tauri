@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.vite-ssg-temp/
+.xwin-cache
+src-tauri/.cargo
+src-tauri/bin

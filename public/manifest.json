@@ -1,0 +1,17 @@
+{
+  "short_name": "ytdlptauri",
+  "name": "ytdlptauri",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "type": "image/x-icon",
+      "sizes": "16x16"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#8a2be2",
+  "background_color": "#333333",
+  "orientation": "any",
+  "categories": ["utilities"]
+}

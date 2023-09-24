@@ -1,0 +1,47 @@
+{
+  "name": "ytdlptauri",
+  "version": "0.1.0",
+  "description": "",
+  "scripts": {
+    "tauri": "TAURI_PRIVATE_KEY=~/.tauri/ytdlptauri.key tauri",
+    "tauri:bundle": "npm run tauri build -- --target x86_64-unknown-linux-gnu --bundles appimage,updater && npm run tauri build -- --target x86_64-pc-windows-msvc --bundles msi,updater",
+    "start": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0-alpha.8",
+    "@types/debounce": "^1.2.1",
+    "@typescript-eslint/eslint-plugin": "^5.40.0",
+    "@typescript-eslint/parser": "^5.40.0",
+    "eslint": "^8.25.0",
+    "eslint-plugin-solid": "^0.7.3",
+    "rollup-plugin-visualizer": "^5.8.3",
+    "sass": "^1.57.0",
+    "typescript": "^4.9.4",
+    "vite": "^4.3.3",
+    "vite-plugin-eslint": "^1.8.1",
+    "vite-plugin-solid": "^2.7.0"
+  },
+  "dependencies": {
+    "@felte/solid": "^1.2.7",
+    "@felte/validator-superstruct": "^1.0.15",
+    "@gazatu/solid-spectre": "^1.4.2",
+    "@solid-primitives/intersection-observer": "^2.1.0",
+    "@solid-primitives/media": "^2.1.6",
+    "@solid-primitives/memo": "^1.2.4",
+    "@solid-primitives/props": "^3.1.4",
+    "@solid-primitives/scheduled": "^1.3.2",
+    "@solid-primitives/storage": "^1.3.9",
+    "@solidjs/meta": "^0.28.4",
+    "@solidjs/router": "^0.8.2",
+    "@tauri-apps/api": "^2.0.0-alpha.3",
+    "debounce": "^1.2.1",
+    "idb-keyval": "^6.2.0",
+    "solid-js": "^1.7.3",
+    "superstruct": "^1.0.3"
+  }
+}
