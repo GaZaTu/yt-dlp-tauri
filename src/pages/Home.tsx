@@ -1,7 +1,7 @@
-import { iconDownload } from "@gazatu/solid-spectre/icons/iconDownload"
-import { iconRefreshCw } from "@gazatu/solid-spectre/icons/iconRefreshCw"
-import { iconFolder } from "@gazatu/solid-spectre/icons/iconFolder"
 import { iconBookOpen } from "@gazatu/solid-spectre/icons/iconBookOpen"
+import { iconDownload } from "@gazatu/solid-spectre/icons/iconDownload"
+import { iconFolder } from "@gazatu/solid-spectre/icons/iconFolder"
+import { iconRefreshCw } from "@gazatu/solid-spectre/icons/iconRefreshCw"
 import { Button } from "@gazatu/solid-spectre/ui/Button"
 import { Column } from "@gazatu/solid-spectre/ui/Column"
 import { Form } from "@gazatu/solid-spectre/ui/Form"
@@ -13,11 +13,11 @@ import { Section } from "@gazatu/solid-spectre/ui/Section"
 import { Select } from "@gazatu/solid-spectre/ui/Select"
 import { Toaster } from "@gazatu/solid-spectre/ui/Toaster"
 import { createStorageSignal } from "@solid-primitives/storage"
+import * as dialog from "@tauri-apps/api/dialog"
 import { ResponseType, fetch } from "@tauri-apps/api/http"
 import { platform } from "@tauri-apps/api/os"
 import { downloadDir } from "@tauri-apps/api/path"
 import { Command, open } from "@tauri-apps/api/shell"
-import * as dialog from "@tauri-apps/api/dialog"
 import { Component, ComponentProps, For, createEffect, createSignal } from "solid-js"
 import { writeFile } from "../lib/tauri-plugin-fs"
 
@@ -86,7 +86,7 @@ const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
     let selectedFormats = [] as (typeof formats)["videoOnly"][number][]
     while (selectedFormats.length === 0) {
       const resolution = quality.replace("p", "")
-      selectedFormats = formats.videoOnly.filter(f => f.resolution.includes(resolution))
+      selectedFormats = formats.videoOnly.filter(f => f.resolution.endsWith(resolution))
 
       switch (quality) {
         case "1440p":
@@ -138,7 +138,7 @@ const ProgressToast: Component<ProgressToast> = props => {
 
 const HomeView: Component = () => {
   const [downloading, setDownloading] = createSignal(false)
-  const [urlList, setURLList] = createSignal("")
+  const [urlList, setURLList] = createStorageSignal("URL_LIST", "")
   const [selectedQuality, setSelectedQuality] = createStorageSignal<(typeof selectableQualities)[number]>("SELECTED_QUALITY", "audio")
   const [selectedSubtitles, setSelectedSubtitles] = createStorageSignal("SELECTED_SUBTITLES", "")
   const [downloadDirectory, setDownloadDirectory] = createStorageSignal("DOWNLOAD_DIRECTORY", "")
@@ -160,7 +160,7 @@ const HomeView: Component = () => {
           throw new Error(`invalid value: ${quality}`)
         }
 
-        const urls = urlList().split("\n")
+        const urls = (urlList() ?? "").split("\n")
           .filter(url => !!url.trim())
           .map(url => new URL(url.trim()))
 
@@ -285,7 +285,7 @@ const HomeView: Component = () => {
       <Section size="xl" marginY>
         <Column.Row>
           <Column>
-            <Form.Group label="Format">
+            <Form.Group label="Quality">
               <Select onchange={e => setSelectedQuality(selectableQualities[e.currentTarget.selectedIndex])}>
                 <For each={selectableQualities}>
                   {quality => (
@@ -304,7 +304,7 @@ const HomeView: Component = () => {
         </Column.Row>
 
         <Form.Group label="URLs">
-          <Input multiline value={urlList()} oninput={e => setURLList(e.currentTarget.value)} onpaste={onpaste} ifEmpty={""} style={{ height: "77vh" }} />
+          <Input multiline value={urlList() ?? ""} oninput={e => setURLList(e.currentTarget.value)} onpaste={onpaste} ifEmpty={""} style={{ height: "77vh" }} />
         </Form.Group>
 
         <Navbar>
