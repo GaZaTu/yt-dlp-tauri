@@ -1,0 +1,19 @@
+.HomeView {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+
+  > .urls {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+
+    > textarea {
+      flex-grow: 1;
+    }
+  }
+
+  > .controls {
+    margin-bottom: 0.5rem;
+  }
+}

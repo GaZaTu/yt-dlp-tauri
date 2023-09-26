@@ -18,8 +18,10 @@ import { ResponseType, fetch } from "@tauri-apps/api/http"
 import { platform } from "@tauri-apps/api/os"
 import { downloadDir } from "@tauri-apps/api/path"
 import { Command, open } from "@tauri-apps/api/shell"
+import { UserAttentionType, appWindow } from "@tauri-apps/api/window"
 import { Component, ComponentProps, For, createEffect, createSignal } from "solid-js"
 import { writeFile } from "../lib/tauri-plugin-fs"
+import "./Home.scss"
 
 const selectableQualities = ["audio", "1440p", "1080p", "720p"] as const
 
@@ -62,24 +64,33 @@ const listYTVideoFormats = async (url: URL) => {
   }
 }
 
+type YTDLPDownloadProgressEvent = {
+  percentage: number
+  downloaded: number
+  downloadedUnit: string
+  speed: number
+  speedUnit: string
+  eta: string
+}
+
 type YTDLPDownloadOptions = {
   url: URL
   output: string
   type: "audio" | "1440p" | "1080p" | "720p"
-  fileFormat?: string
   subtitles?: string
+  onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
 }
 
 const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
-  const { url, output, type, fileFormat, subtitles } = options
+  const { url, output, type, subtitles, onProgress } = options
 
   const formats = await listYTVideoFormats(url)
 
-  const ytdlpArgs = ["--no-playlist", "--concurrent-fragments", "4"]
+  const ytdlpArgs = ["--no-playlist", "--concurrent-fragments=4", "--embed-metadata", "--embed-thumbnail"]
   if (type === "audio") {
     const bestAudio = formats.audioOnly[formats.audioOnly.length - 1]
 
-    ytdlpArgs.push("--format", bestAudio.id, "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0")
+    ytdlpArgs.push(`--format=${bestAudio.id}`, "--extract-audio", "--audio-format=mp3", "--audio-quality=0")
   } else {
     let quality = type
 
@@ -101,21 +112,70 @@ const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
     const bestVideo = selectedFormats[selectedFormats.length - 1]
     const bestAudio = formats.audioOnly[formats.audioOnly.length - 1]
 
-    ytdlpArgs.push("--format", `${bestVideo.id}+${bestAudio.id}`)
+    ytdlpArgs.push(`--format=${bestVideo.id}+${bestAudio.id}`)
 
     if (subtitles) {
-      ytdlpArgs.push("--write-sub", "--write-auto-sub", "--sub-lang", `${subtitles}.*`)
+      ytdlpArgs.push(`--sub-langs=${subtitles}.*`, "--embed-subs")
     }
   }
 
-  ytdlpArgs.push("-o", output, url.href)
+  ytdlpArgs.push("--quiet", "--progress", "--newline")
+
+  ytdlpArgs.push("--windows-filenames", `--output=${output}`, url.href)
+
+  console.log("yt-dlp", ...ytdlpArgs)
 
   const command = Command.sidecar("bin/yt-dlp", ytdlpArgs)
 
-  const { code, stderr } = await command.execute()
-  if (code !== 0) {
-    throw new Error(stderr)
-  }
+  await new Promise<void>((resolve, reject) => {
+    const state = {
+      percentage: 0,
+      stderr: "",
+    }
+
+    command.on("error", error => {
+      reject(error)
+    })
+
+    command.on("close", ({ code }) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(state.stderr)
+      }
+    })
+
+    command.stdout.on("data", line => {
+
+      const regex = /^\[download\]\s+(\d+)\.\d+%\s+\S*\s+\S*\s+(\d+)\.\d+(\S+)\s+\S*\s+(\d+)\.\d+(\S+)\s+\S*\s+(\S+)/
+      const match = regex.exec(line)
+      if (!match) {
+        return
+      }
+
+      const [, percentage, downloaded, downloadedUnit, speed, speedUnit, eta] = match
+      if (Number(percentage) !== 0 && (Number(percentage) - state.percentage) < 1) {
+        return
+      }
+
+      state.percentage = Number(percentage)
+
+      onProgress?.({
+        percentage: Math.min(Number(percentage), 100),
+        downloaded: Number(downloaded),
+        downloadedUnit,
+        speed: Number(speed),
+        speedUnit,
+        eta,
+      })
+    })
+
+    command.stderr.on("data", line => {
+      state.stderr += line + "\n"
+    })
+
+    command.spawn()
+  })
 }
 
 type ProgressToast = {
@@ -130,14 +190,15 @@ const ProgressToast: Component<ProgressToast> = props => {
       <div>
         <Progress value={props.value} max={props.max} />
       </div>
-      <p>{props.text}</p>
-      {/* <p>{estimatedEndText}</p> */}
+      <pre>{props.text}</pre>
     </div>
   )
 }
 
 const HomeView: Component = () => {
   const [downloading, setDownloading] = createSignal(false)
+  const [updating, setUpdating] = createSignal(false)
+
   const [urlList, setURLList] = createStorageSignal("URL_LIST", "")
   const [selectedQuality, setSelectedQuality] = createStorageSignal<(typeof selectableQualities)[number]>("SELECTED_QUALITY", "audio")
   const [selectedSubtitles, setSelectedSubtitles] = createStorageSignal("SELECTED_SUBTITLES", "")
@@ -148,6 +209,11 @@ const HomeView: Component = () => {
       setDownloadDirectory(await downloadDir())
     }
   })
+
+  const [urlsProgress, setURLsProgress] = createSignal(0)
+  const [urlsProgressText, setURLsProgressText] = createSignal("")
+  const [videoProgress, setVideoProgress] = createSignal(0)
+  const [videoProgressText, setVideoProgressText] = createSignal("")
 
   const download = async () => {
     setDownloading(true)
@@ -164,20 +230,34 @@ const HomeView: Component = () => {
           .filter(url => !!url.trim())
           .map(url => new URL(url.trim()))
 
-        const [value, setValue] = createSignal(0)
-        const [text, setText] = createSignal("")
+        const appWindowState = {
+          focused: true,
+        }
+        const unlistenFocusChanged = await appWindow.onFocusChanged(({ payload: focused }) => {
+          appWindowState.focused = focused
+        })
 
         let cancelled = false
-        const toast = Toaster.push({
-          timeout: 0,
-          closable: true,
-          children: (
-            <ProgressToast value={value()} max={urls.length} text={text()} />
-          ),
-          onclose: () => {
-            cancelled = true
-          },
-        })
+        const urlsProgressToast = (() => {
+          if (urls.length < 2) {
+            // eslint-disable-next-line solid/components-return-once
+            return ""
+          }
+
+          setURLsProgress(0)
+          setURLsProgressText(`downloading video ${urlsProgress() + 1} out of ${urls.length}`)
+
+          return Toaster.push({
+            timeout: 0,
+            closable: true,
+            children: (
+              <ProgressToast value={urlsProgress()} max={urls.length} text={urlsProgressText()} />
+            ),
+            onclose: () => {
+              cancelled = true
+            },
+          })
+        })()
 
         try {
           const filePattern = `${downloadDirectory()}/%(title)s.%(ext)s`
@@ -187,23 +267,52 @@ const HomeView: Component = () => {
               throw new Error("downloads cancelled")
             }
 
-            setText(`downloading ${url}`)
+            setURLsProgressText(`downloading video ${urlsProgress() + 1} out of ${urls.length}`)
 
-            await downloadYTVideo({
-              url,
-              output: filePattern,
-              type: quality,
-              subtitles,
+            setVideoProgress(0)
+            setVideoProgressText(`${url}\n${0}% (${0}${"KiB"}) at ${0}${"KiB/s"} ETA ${"Unknown"}`)
+
+            const videoProgressToast = Toaster.push({
+              timeout: 0,
+              closable: false,
+              children: (
+                <ProgressToast value={videoProgress()} max={100} text={videoProgressText()} />
+              ),
             })
 
-            setValue(v => v + 1)
+            try {
+              await downloadYTVideo({
+                url,
+                output: filePattern,
+                type: quality,
+                subtitles,
+                onProgress: event => {
+                  setVideoProgress(event.percentage)
+                  setVideoProgressText(`${url}\n${event.percentage}% (${event.downloaded}${event.downloadedUnit}) at ${event.speed}${event.speedUnit} ETA ${event.eta}`)
+                },
+              })
+            } finally {
+              Toaster.remove(videoProgressToast)
+            }
+
+            setURLsProgress(v => v + 1)
+            setURLList(l => l?.replace(url.href, "") ?? null)
           }
 
           setURLList("")
 
           Toaster.pushSuccess("downloaded")
+
+          unlistenFocusChanged()
+          if (!appWindowState.focused) {
+            await appWindow.requestUserAttention(UserAttentionType.Informational)
+            const unlistenFocusChanged = await appWindow.onFocusChanged(() => {
+              unlistenFocusChanged()
+              appWindow.requestUserAttention(null)
+            })
+          }
         } finally {
-          Toaster.remove(toast)
+          Toaster.remove(urlsProgressToast)
         }
       })
     } finally {
@@ -212,7 +321,7 @@ const HomeView: Component = () => {
   }
 
   const updateYTDLP = async () => {
-    setDownloading(true)
+    setUpdating(true)
     try {
       await Toaster.try(async () => {
         let fileToDownload = ""
@@ -243,7 +352,7 @@ const HomeView: Component = () => {
         await writeFile(`./${fileToWrite}`, response.data)
       })
     } finally {
-      setDownloading(false)
+      setUpdating(false)
     }
   }
 
@@ -282,11 +391,11 @@ const HomeView: Component = () => {
 
   return (
     <>
-      <Section size="xl" marginY>
+      <Section class="HomeView" size="xl">
         <Column.Row>
           <Column>
             <Form.Group label="Quality">
-              <Select onchange={e => setSelectedQuality(selectableQualities[e.currentTarget.selectedIndex])}>
+              <Select onchange={e => setSelectedQuality(selectableQualities[e.currentTarget.selectedIndex])} disabled={downloading()}>
                 <For each={selectableQualities}>
                   {quality => (
                     <option selected={selectedQuality() === quality}>{quality}</option>
@@ -298,18 +407,18 @@ const HomeView: Component = () => {
 
           <Column>
             <Form.Group label="Subtitles (like: en)">
-              <Input value={selectedSubtitles() ?? ""} oninput={e => setSelectedSubtitles(e.currentTarget.value)} ifEmpty={""} disabled={selectedQuality() === "audio"} />
+              <Input value={selectedSubtitles() ?? ""} oninput={e => setSelectedSubtitles(e.currentTarget.value)} ifEmpty={""} disabled={downloading() || selectedQuality() === "audio"} />
             </Form.Group>
           </Column>
         </Column.Row>
 
-        <Form.Group label="URLs">
-          <Input multiline value={urlList() ?? ""} oninput={e => setURLList(e.currentTarget.value)} onpaste={onpaste} ifEmpty={""} style={{ height: "77vh" }} />
+        <Form.Group class="urls" label="URLs">
+          <Input multiline value={urlList() ?? ""} oninput={e => setURLList(e.currentTarget.value)} onpaste={onpaste} ifEmpty={""} disabled={downloading()} />
         </Form.Group>
 
-        <Navbar>
+        <Navbar class="controls">
           <Navbar.Section style={{ "max-width": "25%" }}>
-            <Button onclick={updateYTDLP} loading={downloading()}>
+            <Button onclick={updateYTDLP} loading={updating()} disabled={downloading()}>
               <Icon src={iconRefreshCw} />
               <span>Update</span>
             </Button>
@@ -319,8 +428,8 @@ const HomeView: Component = () => {
             <Navbar style={{ "width": "100%" }}>
               <Navbar.Section>
                 <Input.Group style={{ "width": "100%" }}>
-                  <Input value={downloadDirectory() ?? ""} oninput={e => setDownloadDirectory(e.currentTarget.value)} ifEmpty={""} placeholder="Download Directory" />
-                  <Button onclick={pickDownloadDirectory}>
+                  <Input value={downloadDirectory() ?? ""} oninput={e => setDownloadDirectory(e.currentTarget.value)} ifEmpty={""} placeholder="Download Directory" disabled={downloading()} />
+                  <Button onclick={pickDownloadDirectory} disabled={downloading()}>
                     <Icon src={iconFolder} />
                   </Button>
                   <Button onclick={openDownloadDirectory}>
@@ -330,7 +439,7 @@ const HomeView: Component = () => {
               </Navbar.Section>
 
               <Navbar.Section style={{ "max-width": "25%" }}>
-                <Button color="primary" onclick={download} loading={downloading()}>
+                <Button color="primary" onclick={download} loading={downloading()} disabled={updating()}>
                   <Icon src={iconDownload} />
                   <span>Download</span>
                 </Button>

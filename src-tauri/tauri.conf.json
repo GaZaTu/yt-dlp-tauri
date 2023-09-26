@@ -53,6 +53,9 @@
         "scope": [
           "https://github.com/yt-dlp/yt-dlp/releases/latest/download/*"
         ]
+      },
+      "window": {
+        "all": true
       }
     },
     "bundle": {

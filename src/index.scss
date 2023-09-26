@@ -86,3 +86,7 @@ body {
 #AppMain {
   flex-grow: 1;
 }
+
+.form-select:disabled {
+  background-color: var(--body-bg-monochrome) !important;
+}
