@@ -19,11 +19,13 @@ import { platform } from "@tauri-apps/api/os"
 import { downloadDir } from "@tauri-apps/api/path"
 import { Command, open } from "@tauri-apps/api/shell"
 import { UserAttentionType, appWindow } from "@tauri-apps/api/window"
-import { Component, ComponentProps, For, createEffect, createSignal } from "solid-js"
+import { Component, ComponentProps, For, Show, createEffect, createSignal } from "solid-js"
 import { writeFile } from "../lib/tauri-plugin-fs"
 import "./Home.scss"
 
 const selectableQualities = ["audio", "1440p", "1080p", "720p"] as const
+const selectableAudioFormats = ["flac", "mp3", "opus"] as const
+const selectableVideoFormats = ["mp4", "mkv"] as const
 
 type YTVideoFormat = {
   id: string,
@@ -77,12 +79,13 @@ type YTDLPDownloadOptions = {
   url: URL
   output: string
   type: "audio" | "1440p" | "1080p" | "720p"
+  fileFormat?: string
   subtitles?: string
   onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
 }
 
 const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
-  const { url, output, type, subtitles, onProgress } = options
+  const { url, output, type, fileFormat, subtitles, onProgress } = options
 
   const formats = await listYTVideoFormats(url)
 
@@ -91,6 +94,10 @@ const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
     const bestAudio = formats.audioOnly[formats.audioOnly.length - 1]
 
     ytdlpArgs.push(`--format=${bestAudio.id}`, "--extract-audio", "--audio-format=mp3", "--audio-quality=0")
+
+    if (fileFormat) {
+      ytdlpArgs.push(`--audio-format=${fileFormat}`)
+    }
   } else {
     let quality = type
 
@@ -113,6 +120,10 @@ const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
     const bestAudio = formats.audioOnly[formats.audioOnly.length - 1]
 
     ytdlpArgs.push(`--format=${bestVideo.id}+${bestAudio.id}`)
+
+    if (fileFormat) {
+      ytdlpArgs.push(`--remux-video=${fileFormat}`)
+    }
 
     if (subtitles) {
       ytdlpArgs.push(`--sub-langs=${subtitles}.*`, "--embed-subs")
@@ -204,6 +215,9 @@ const HomeView: Component = () => {
   const [selectedSubtitles, setSelectedSubtitles] = createStorageSignal("SELECTED_SUBTITLES", "")
   const [downloadDirectory, setDownloadDirectory] = createStorageSignal("DOWNLOAD_DIRECTORY", "")
 
+  const [audioFileFormat, setAudioFileFormat] = createStorageSignal<(typeof selectableAudioFormats)[number]>("AUDIO_FILE_FORMAT", "mp3")
+  const [videoFileFormat, setVideoFileFormat] = createStorageSignal<(typeof selectableVideoFormats)[number]>("VIDEO_FILE_FORMAT", "mkv")
+
   createEffect(async () => {
     if (!downloadDirectory()) {
       setDownloadDirectory(await downloadDir())
@@ -285,6 +299,7 @@ const HomeView: Component = () => {
                 url,
                 output: filePattern,
                 type: quality,
+                fileFormat: ((quality === "audio") ? audioFileFormat() : videoFileFormat()) ?? undefined,
                 subtitles,
                 onProgress: event => {
                   setVideoProgress(event.percentage)
@@ -402,6 +417,28 @@ const HomeView: Component = () => {
                   )}
                 </For>
               </Select>
+            </Form.Group>
+          </Column>
+
+          <Column>
+            <Form.Group label="File Format">
+              <Show when={selectedQuality() === "audio"} fallback={
+                <Select onchange={e => setVideoFileFormat(selectableVideoFormats[e.currentTarget.selectedIndex])} disabled={downloading()}>
+                  <For each={selectableVideoFormats}>
+                    {format => (
+                      <option selected={videoFileFormat() === format}>{format}</option>
+                    )}
+                  </For>
+                </Select>
+              }>
+                <Select onchange={e => setAudioFileFormat(selectableAudioFormats[e.currentTarget.selectedIndex])} disabled={downloading()}>
+                  <For each={selectableAudioFormats}>
+                    {format => (
+                      <option selected={audioFileFormat() === format}>{format}</option>
+                    )}
+                  </For>
+                </Select>
+              </Show>
             </Form.Group>
           </Column>
 
