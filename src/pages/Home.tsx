@@ -15,13 +15,13 @@ import { Toaster } from "@gazatu/solid-spectre/ui/Toaster"
 import { createStorageSignal } from "@solid-primitives/storage"
 import * as dialog from "@tauri-apps/api/dialog"
 import { ResponseType, fetch } from "@tauri-apps/api/http"
-import { platform } from "@tauri-apps/api/os"
+import { platform, tempdir } from "@tauri-apps/api/os"
 import { appCacheDir, dirname, downloadDir } from "@tauri-apps/api/path"
 import { Command, open } from "@tauri-apps/api/shell"
 import { invoke } from "@tauri-apps/api/tauri"
 import { UserAttentionType, appWindow } from "@tauri-apps/api/window"
 import { Component, ComponentProps, Show, createEffect, createSignal } from "solid-js"
-import { copyFile, createDir, pathExists, writeFile } from "../lib/tauri-plugin-fs"
+import { copyFile, createDir, pathExists, removeFile, writeFile } from "../lib/tauri-plugin-fs"
 import "./Home.scss"
 
 const tauriExeDir = async () => {
@@ -57,65 +57,54 @@ const createYTDLPCommand = async (args: string[]) => {
   return Command.sidecar("bin/yt-dlp", args)
 }
 
-type YTVideoFormat = {
-  id: string,
-  format: string,
-  resolution: string,
-  fps: string,
-}
+class CancellationToken {
+  private _cancelled = false
+  private _listener = () => undefined
 
-const listYTVideoFormats = async (url: URL) => {
-  const formats = [] as YTVideoFormat[]
-
-  const command = await createYTDLPCommand([
-    "--no-playlist", "--quiet", "--list-formats", url.href,
-  ])
-
-  const { code, stdout, stderr } = await command.execute()
-  if (code !== 0) {
-    throw new Error(stderr)
+  get cancelled() {
+    return this._cancelled
   }
 
-  const formatsRegex = /(\w+)\s+(\w+)\s+(audio only|\d+x\d+)\s+(\d+)\s+(\d+\s+|)/gm
-  let formatsMatch
-  while ((formatsMatch = formatsRegex.exec(stdout)) !== null) {
-    if (formatsMatch.index === formatsRegex.lastIndex) {
-      formatsRegex.lastIndex++
+  cancel() {
+    this._cancelled = true
+    this._listener()
+  }
+
+  listen(listener: () => any) {
+    this._listener = listener
+
+    if (this._cancelled) {
+      this._listener()
     }
-
-    const [, id, format, resolution, fps] = formatsMatch
-    formats.push({ id, format, resolution, fps })
-  }
-
-  const videoOnly = formats.filter(f => f.resolution !== "audio only")
-  const audioOnly = formats.filter(f => f.resolution === "audio only")
-
-  return {
-    videoOnly,
-    audioOnly,
   }
 }
 
 type YTDLPDownloadProgressEvent = {
+  url: string
+  title: string
   percentage: number
   downloaded: number
   downloadedUnit: string
+  total: number
+  totalUnit: string
   speed: number
   speedUnit: string
-  eta: string
+  eta: number
+  etaUnit: string
 }
 
 type YTDLPDownloadOptions = {
-  url: URL
+  urls: URL[]
   output: string
   type: "audio" | "1440p" | "1080p" | "720p"
   fileFormat?: string
   subtitles?: string
   onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
+  cancellationToken?: CancellationToken
 }
 
-const downloadVideo = async (options: YTDLPDownloadOptions) => {
-  const { url, output, type, fileFormat, subtitles, onProgress } = options
+const downloadVideos = async (options: YTDLPDownloadOptions) => {
+  const { urls, output, type, fileFormat, subtitles, onProgress, cancellationToken } = options
 
   const ytdlpArgs = ["--no-playlist", "--concurrent-fragments=4", "--embed-metadata"]
   if (type === "audio") {
@@ -137,61 +126,113 @@ const downloadVideo = async (options: YTDLPDownloadOptions) => {
     }
   }
 
-  ytdlpArgs.push("--quiet", "--progress", "--newline")
+  type RawProgressEvent = {
+    type: "download"
+    title: string
+    url: string
+    status: "downloading" | "finished"
+    downloadedBytes: string
+    totalBytes: string
+    eta: string
+    speed: string
+  } | {
+    type: "postprocess"
+  }
 
-  ytdlpArgs.push("--windows-filenames", `--output=${output}`, url.href)
+  ytdlpArgs.push("--quiet", "--progress", "--progress-template=download:{\"type\":\"download\",\"title\":%(info.title)j,\"url\":%(info.webpage_url)j,\"status\":%(progress.status)j,\"downloadedBytes\":\"%(progress.downloaded_bytes)j\",\"totalBytes\":\"%(progress.total_bytes)j\",\"eta\":\"%(progress.eta)s\",\"speed\":\"%(progress.speed)j\"}", "--progress-template=postprocess:{\"type\":\"postprocess\",\"title\":%(info.title)j,\"url\":%(info.webpage_url)j,\"status\":%(progress.status)j}", "--newline")
 
-  const command = await createYTDLPCommand(ytdlpArgs)
+  const batchFile = await (async () => {
+    // eslint-disable-next-line no-constant-condition
+    for (let i = 0; true; i++) {
+      const path = `${await tempdir()}/ytdlp-${i}`
+      if (await pathExists(path)) {
+        continue
+      }
 
-  await new Promise<void>((resolve, reject) => {
-    const state = {
-      percentage: 0,
-      stderr: "",
+      await writeFile(path, new TextEncoder().encode(urls.join("\n")))
+      return path
     }
+  })()
 
-    command.on("error", error => {
-      reject(error)
-    })
+  ytdlpArgs.push("--windows-filenames", `--output=${output}`, `--batch-file=${batchFile}`)
 
-    command.on("close", ({ code }) => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(state.stderr)
-      }
-    })
+  try {
+    const command = await createYTDLPCommand(ytdlpArgs)
 
-    command.stdout.on("data", line => {
-
-      const regex = /^\[download\]\s+(\d+)\.\d+%\s+\S*\s+\S*\s+(\d+)\.\d+(\S+)\s+\S*\s+(\d+)\.\d+(\S+)\s+\S*\s+(\S+)/
-      const match = regex.exec(line)
-      if (!match) {
-        return
+    await new Promise<void>((resolve, reject) => {
+      const state = {
+        percentage: 0,
+        stderr: "",
       }
 
-      const [, percentage, downloaded, downloadedUnit, speed, speedUnit, eta] = match
-      if (Number(percentage) !== 0 && (Number(percentage) - state.percentage) < 1) {
-        return
-      }
+      command.on("error", error => {
+        reject(error)
+      })
 
-      state.percentage = Number(percentage)
+      command.on("close", ({ code }) => {
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(state.stderr)
+        }
+      })
 
-      onProgress?.({
-        percentage: Math.min(Number(percentage), 100),
-        downloaded: Number(downloaded),
-        downloadedUnit,
-        speed: Number(speed),
-        speedUnit,
-        eta,
+      command.stdout.on("data", line => {
+        try {
+          const event = JSON.parse(line) as RawProgressEvent
+          if (event.type === "postprocess") {
+            return
+          }
+
+          const downloadedBytes = (event.downloadedBytes === "NA") ? 0 : Number(event.downloadedBytes)
+          const totalBytes = (event.totalBytes === "NA") ? 0 : Number(event.totalBytes)
+          const eta = (event.eta === "NA") ? 0 : Number(event.eta)
+          const speed = (event.speed === "NA") ? 0 : Number(event.speed)
+
+          const percentage = Math.floor((downloadedBytes / totalBytes) * 100)
+          if (percentage !== 0 && (percentage - state.percentage) < 1) {
+            return
+          }
+
+          state.percentage = percentage
+
+          onProgress?.({
+            url: event.url,
+            title: event.title,
+            percentage: Math.min(percentage, 100),
+            downloaded: Math.floor(downloadedBytes / 1024 / 1024),
+            downloadedUnit: "MiB",
+            total: Math.floor(totalBytes / 1024 / 1024),
+            totalUnit: "MiB",
+            speed: Math.floor(speed / 1024 / 1024),
+            speedUnit: "MiB/s",
+            eta: eta,
+            etaUnit: "s",
+          })
+        } catch (error) {
+          console.error(error)
+          console.warn(line)
+        }
+      })
+
+      command.stderr.on("data", line => {
+        state.stderr += line + "\n"
+      })
+
+      command.spawn().then(async ytdlp => {
+        cancellationToken?.listen(async () => {
+          await ytdlp.kill()
+          reject("Downloads cancelled")
+        })
       })
     })
-
-    command.stderr.on("data", line => {
-      state.stderr += line + "\n"
-    })
-
-    command.spawn()
-  })
+  } finally {
+    try {
+      await removeFile(batchFile)
+    } catch {
+      // ignore
+    }
+  }
 }
 
 type ProgressToast = {
@@ -202,7 +243,7 @@ type ProgressToast = {
 
 const ProgressToast: Component<ProgressToast> = props => {
   return (
-    <div>
+    <div style={{ width: "96vw" }}>
       <div>
         <Progress value={props.value} max={props.max} />
       </div>
@@ -256,7 +297,7 @@ const HomeView: Component = () => {
           appWindowState.focused = focused
         })
 
-        let cancelled = false
+        const cancellationToken = new CancellationToken()
         const urlsProgressToast = (() => {
           if (urls.length < 2) {
             // eslint-disable-next-line solid/components-return-once
@@ -264,60 +305,57 @@ const HomeView: Component = () => {
           }
 
           setURLsProgress(0)
-          setURLsProgressText(`downloading video ${urlsProgress() + 1} out of ${urls.length}`)
+          setURLsProgressText(`downloading video ${1} out of ${urls.length}`)
 
           return Toaster.push({
             timeout: 0,
-            closable: true,
+            closable: false, // TODO: true (for some reason killing the process does not work)
             children: (
               <ProgressToast value={urlsProgress()} max={urls.length} text={urlsProgressText()} />
             ),
             onclose: () => {
-              cancelled = true
+              cancellationToken.cancel()
             },
           })
         })()
 
+        setVideoProgress(0)
+        setVideoProgressText(`${"Unknown"}\n${0}% (${0}${"MiB"}) of (${0}${"MiB"}) at ${0}${"MiB/s"} ETA ${"N/A"}`)
+
+        const videoProgressToast = Toaster.push({
+          timeout: 0,
+          closable: false,
+          children: (
+            <ProgressToast value={videoProgress()} max={100} text={videoProgressText()} />
+          ),
+        })
+
         try {
-          const filePattern = `${downloadDirectory()}/%(title)s.%(ext)s`
+          let downloadedStreams = 0
+          await downloadVideos({
+            urls,
+            output: `${downloadDirectory()}/%(title)s.%(ext)s`,
+            type: quality,
+            fileFormat: ((quality === "audio") ? audioFileFormat() : videoFileFormat()) ?? undefined,
+            subtitles,
+            onProgress: event => {
+              setVideoProgress(event.percentage)
+              setVideoProgressText(`${event.title}\n${event.percentage}% (${event.downloaded}${event.downloadedUnit}) of ${event.total}${event.totalUnit} at ${event.speed}${event.speedUnit} ETA ${event.eta}${event.etaUnit}`)
 
-          for (const url of urls) {
-            if (cancelled) {
-              throw new Error("downloads cancelled")
-            }
+              if (event.percentage >= 100) {
+                downloadedStreams += 1
 
-            setURLsProgressText(`downloading video ${urlsProgress() + 1} out of ${urls.length}`)
+                if ((quality === "audio") || (downloadedStreams % 2 === 0)) {
+                  setURLsProgress(v => v + 1)
 
-            setVideoProgress(0)
-            setVideoProgressText(`${url}\n${0}% (${0}${"KiB"}) at ${0}${"KiB/s"} ETA ${"Unknown"}`)
-
-            const videoProgressToast = Toaster.push({
-              timeout: 0,
-              closable: false,
-              children: (
-                <ProgressToast value={videoProgress()} max={100} text={videoProgressText()} />
-              ),
-            })
-
-            try {
-              await downloadVideo({
-                url,
-                output: filePattern,
-                type: quality,
-                fileFormat: ((quality === "audio") ? audioFileFormat() : videoFileFormat()) ?? undefined,
-                subtitles,
-                onProgress: event => {
-                  setVideoProgress(event.percentage)
-                  setVideoProgressText(`${url}\n${event.percentage}% (${event.downloaded}${event.downloadedUnit}) at ${event.speed}${event.speedUnit} ETA ${event.eta}`)
-                },
-              })
-            } finally {
-              Toaster.remove(videoProgressToast)
-            }
-
-            setURLsProgress(v => v + 1)
-            setURLList(l => l?.replace(url.href, "") ?? null)
-          }
+                  if (urlsProgress() < urls.length) {
+                    setURLsProgressText(`downloading video ${urlsProgress() + 1} out of ${urls.length}`)
+                  }
+                }
+              }
+            },
+            cancellationToken,
+          })
 
           setURLList("")
 
@@ -332,6 +370,7 @@ const HomeView: Component = () => {
             })
           }
         } finally {
+          Toaster.remove(videoProgressToast)
           Toaster.remove(urlsProgressToast)
         }
       })
