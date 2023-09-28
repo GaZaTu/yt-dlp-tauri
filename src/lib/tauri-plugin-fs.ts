@@ -34,3 +34,7 @@ export const writeFile = async (path: string, bytes: Uint8Array | number[]) => {
 export const removeFile = async (path: string) => {
   return await invoke<void>("plugin:fs|remove_file", { path })
 }
+
+export const copyFile = async (from: string, to: string) => {
+  return await invoke<void>("plugin:fs|copy_file", { from, to })
+}

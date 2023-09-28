@@ -10,22 +10,42 @@ import { Input } from "@gazatu/solid-spectre/ui/Input"
 import { Navbar } from "@gazatu/solid-spectre/ui/Navbar"
 import { Progress } from "@gazatu/solid-spectre/ui/Progress"
 import { Section } from "@gazatu/solid-spectre/ui/Section"
-import { Select } from "@gazatu/solid-spectre/ui/Select"
+import { Select2 } from "@gazatu/solid-spectre/ui/Select2"
 import { Toaster } from "@gazatu/solid-spectre/ui/Toaster"
 import { createStorageSignal } from "@solid-primitives/storage"
 import * as dialog from "@tauri-apps/api/dialog"
 import { ResponseType, fetch } from "@tauri-apps/api/http"
 import { platform } from "@tauri-apps/api/os"
-import { downloadDir } from "@tauri-apps/api/path"
+import { appCacheDir, dirname, downloadDir } from "@tauri-apps/api/path"
 import { Command, open } from "@tauri-apps/api/shell"
+import { invoke } from "@tauri-apps/api/tauri"
 import { UserAttentionType, appWindow } from "@tauri-apps/api/window"
-import { Component, ComponentProps, For, Show, createEffect, createSignal } from "solid-js"
-import { writeFile } from "../lib/tauri-plugin-fs"
+import { Component, ComponentProps, Show, createEffect, createSignal } from "solid-js"
+import { copyFile, createDir, pathExists, writeFile } from "../lib/tauri-plugin-fs"
 import "./Home.scss"
+
+const tauriExeDir = async () => {
+  return await dirname(await invoke<string>("env_current_exe"))
+}
+
+const isAppImage = async () => {
+  const env = await invoke<{ [key: string]: string }>("env_vars")
+  return !!env["APPIMAGE"]
+}
 
 const selectableQualities = ["audio", "1440p", "1080p", "720p"] as const
 const selectableAudioFormats = ["flac", "mp3", "opus"] as const
 const selectableVideoFormats = ["mp4", "mkv"] as const
+
+const createYTDLPCommand = async (args: string[]) => {
+  if (await isAppImage()) {
+    if (await pathExists(`${await appCacheDir()}/yt-dlp`)) {
+      return Command.create("$home/.local/bin/yt-dlp", args)
+    }
+  }
+
+  return Command.sidecar("bin/yt-dlp", args)
+}
 
 type YTVideoFormat = {
   id: string,
@@ -37,7 +57,7 @@ type YTVideoFormat = {
 const listYTVideoFormats = async (url: URL) => {
   const formats = [] as YTVideoFormat[]
 
-  const command = Command.sidecar("bin/yt-dlp", [
+  const command = await createYTDLPCommand([
     "--no-playlist", "--quiet", "--list-formats", url.href,
   ])
 
@@ -136,7 +156,7 @@ const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
 
   console.log("yt-dlp", ...ytdlpArgs)
 
-  const command = Command.sidecar("bin/yt-dlp", ytdlpArgs)
+  const command = await createYTDLPCommand(ytdlpArgs)
 
   await new Promise<void>((resolve, reject) => {
     const state = {
@@ -364,7 +384,27 @@ const HomeView: Component = () => {
           throw new Error(String(response.status))
         }
 
-        await writeFile(`./${fileToWrite}`, response.data)
+        if (await isAppImage()) {
+          if (!await pathExists(await appCacheDir())) {
+            await createDir(await appCacheDir())
+          }
+
+          const ytdlp = `${await appCacheDir()}/${fileToWrite}`
+          if (!await pathExists(ytdlp)) {
+            await copyFile(`${await tauriExeDir()}/${fileToWrite}`, ytdlp)
+          }
+
+          const ffmpeg = `${await appCacheDir()}/ffmpeg`
+          if (!await pathExists(ffmpeg)) {
+            await copyFile(`${await tauriExeDir()}/ffmpeg`, ffmpeg)
+          }
+
+          await writeFile(ytdlp, response.data)
+        } else {
+          await writeFile(`${await tauriExeDir()}/${fileToWrite}`, response.data)
+        }
+
+        Toaster.pushSuccess("updated yt-dlp")
       })
     } finally {
       setUpdating(false)
@@ -410,34 +450,16 @@ const HomeView: Component = () => {
         <Column.Row>
           <Column>
             <Form.Group label="Quality">
-              <Select onchange={e => setSelectedQuality(selectableQualities[e.currentTarget.selectedIndex])} disabled={downloading()}>
-                <For each={selectableQualities}>
-                  {quality => (
-                    <option selected={selectedQuality() === quality}>{quality}</option>
-                  )}
-                </For>
-              </Select>
+              <Select2 options={selectableQualities as any} renderOption={o => o} stringifyOption={o => o} selected={selectedQuality()} onselect={o => setSelectedQuality(o)} disabled={downloading()} />
             </Form.Group>
           </Column>
 
           <Column>
             <Form.Group label="File Format">
               <Show when={selectedQuality() === "audio"} fallback={
-                <Select onchange={e => setVideoFileFormat(selectableVideoFormats[e.currentTarget.selectedIndex])} disabled={downloading()}>
-                  <For each={selectableVideoFormats}>
-                    {format => (
-                      <option selected={videoFileFormat() === format}>{format}</option>
-                    )}
-                  </For>
-                </Select>
+                <Select2 options={selectableVideoFormats as any} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading()} />
               }>
-                <Select onchange={e => setAudioFileFormat(selectableAudioFormats[e.currentTarget.selectedIndex])} disabled={downloading()}>
-                  <For each={selectableAudioFormats}>
-                    {format => (
-                      <option selected={audioFileFormat() === format}>{format}</option>
-                    )}
-                  </For>
-                </Select>
+                <Select2 options={selectableAudioFormats as any} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
               </Show>
             </Form.Group>
           </Column>

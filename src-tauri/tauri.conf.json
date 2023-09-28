@@ -29,6 +29,11 @@
             "name": "bin/yt-dlp",
             "sidecar": true,
             "args": true
+          },
+          {
+            "name": "$home/.local/bin/yt-dlp",
+            "cmd": "$APPCACHE/yt-dlp",
+            "args": true
           }
         ]
       },

@@ -4,8 +4,8 @@
   "description": "",
   "scripts": {
     "tauri": "TAURI_PRIVATE_KEY=~/.tauri/ytdlptauri.key tauri",
-    "tauri:bundle:linux": "npm run tauri build -- --target x86_64-unknown-linux-gnu --bundles appimage,updater",
-    "tauri:bundle:windows": "npm run tauri build -- --target x86_64-pc-windows-msvc --bundles msi,updater",
+    "tauri:bundle:linux": "npm run tauri build -- --target x86_64-unknown-linux-gnu --bundles appimage",
+    "tauri:bundle:windows": "npm run tauri build -- --target x86_64-pc-windows-msvc --bundles msi",
     "tauri:bundle": "npm run tauri:bundle:linux && npm run tauri:bundle:windows",
     "cargo": "cd src-tauri && cargo",
     "start": "vite",
@@ -32,7 +32,7 @@
   "dependencies": {
     "@felte/solid": "^1.2.7",
     "@felte/validator-superstruct": "^1.0.15",
-    "@gazatu/solid-spectre": "^1.4.2",
+    "@gazatu/solid-spectre": "^1.5.0",
     "@solid-primitives/intersection-observer": "^2.1.0",
     "@solid-primitives/media": "^2.1.6",
     "@solid-primitives/memo": "^1.2.4",
@@ -44,7 +44,7 @@
     "@tauri-apps/api": "^2.0.0-alpha.3",
     "debounce": "^1.2.1",
     "idb-keyval": "^6.2.0",
-    "solid-js": "^1.7.3",
+    "solid-js": "^1.7.12",
     "superstruct": "^1.0.3"
   }
 }

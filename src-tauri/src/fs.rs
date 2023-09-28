@@ -2,7 +2,7 @@ use tauri::{Runtime, plugin::{TauriPlugin, Builder}};
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
   Builder::new("fs")
-    .invoke_handler(tauri::generate_handler![read_dir, create_dir, remove_dir_all, path_exists, read_file, write_file, remove_file])
+    .invoke_handler(tauri::generate_handler![read_dir, create_dir, remove_dir_all, path_exists, read_file, write_file, remove_file, copy_file])
     .setup(|_app, _| {
       return Ok(());
     })
@@ -47,10 +47,21 @@ async fn read_file(path: String) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 async fn write_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
-  return std::fs::write(path, bytes).map_err(|err| err.to_string());
+  std::fs::write(path, bytes).map_err(|err| err.to_string())?;
+
+  return Ok(());
 }
 
 #[tauri::command]
 async fn remove_file(path: String) -> Result<(), String> {
-  return std::fs::remove_file(path).map_err(|err| err.to_string());
+  std::fs::remove_file(path).map_err(|err| err.to_string())?;
+
+  return Ok(());
+}
+
+#[tauri::command]
+async fn copy_file(from: String, to: String) -> Result<(), String> {
+  std::fs::copy(from, to).map_err(|err| err.to_string())?;
+
+  return Ok(());
 }
