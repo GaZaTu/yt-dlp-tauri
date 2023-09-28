@@ -37,11 +37,19 @@ const selectableQualities = ["audio", "1440p", "1080p", "720p"] as const
 const selectableAudioFormats = ["flac", "mp3", "opus"] as const
 const selectableVideoFormats = ["mp4", "mkv"] as const
 
+const getFFMPEGLocation = async () => {
+  if (await isAppImage() && await pathExists(`${await appCacheDir()}/ffmpeg`)) {
+    return `${await appCacheDir()}/ffmpeg`
+  } else {
+    return `${await tauriExeDir()}/ffmpeg${(await platform() === "win32") ? ".exe" : ""}`
+  }
+}
+
 const createYTDLPCommand = async (args: string[]) => {
-  if (await isAppImage()) {
-    if (await pathExists(`${await appCacheDir()}/yt-dlp`)) {
-      return Command.create("$home/.local/bin/yt-dlp", args)
-    }
+  args = [...args, `--ffmpeg-location=${await getFFMPEGLocation()}`]
+
+  if (await isAppImage() && await pathExists(`${await appCacheDir()}/yt-dlp`)) {
+    return Command.create("$home/.local/bin/yt-dlp", args)
   }
 
   return Command.sidecar("bin/yt-dlp", args)
@@ -104,7 +112,7 @@ type YTDLPDownloadOptions = {
   onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
 }
 
-const downloadYTVideo = async (options: YTDLPDownloadOptions) => {
+const downloadVideo = async (options: YTDLPDownloadOptions) => {
   const { url, output, type, fileFormat, subtitles, onProgress } = options
 
   const formats = await listYTVideoFormats(url)
@@ -315,7 +323,7 @@ const HomeView: Component = () => {
             })
 
             try {
-              await downloadYTVideo({
+              await downloadVideo({
                 url,
                 output: filePattern,
                 type: quality,
@@ -362,13 +370,13 @@ const HomeView: Component = () => {
         let fileToDownload = ""
         let fileToWrite = ""
         switch (await platform()) {
-          case "linux":
-            fileToDownload = "yt-dlp_linux"
-            fileToWrite = "yt-dlp"
-            break
           case "win32":
             fileToDownload = "yt-dlp.exe"
             fileToWrite = "yt-dlp.exe"
+            break
+          case "linux":
+            fileToDownload = "yt-dlp_linux"
+            fileToWrite = "yt-dlp"
             break
           default:
             return
