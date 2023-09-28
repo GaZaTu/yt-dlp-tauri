@@ -46,7 +46,9 @@ const getFFMPEGLocation = async () => {
 }
 
 const createYTDLPCommand = async (args: string[]) => {
-  args = [...args, `--ffmpeg-location=${await getFFMPEGLocation()}`]
+  args = [`--ffmpeg-location=${await getFFMPEGLocation()}`, ...args]
+
+  console.log("yt-dlp", ...args)
 
   if (await isAppImage() && await pathExists(`${await appCacheDir()}/yt-dlp`)) {
     return Command.create("$home/.local/bin/yt-dlp", args)
@@ -115,39 +117,16 @@ type YTDLPDownloadOptions = {
 const downloadVideo = async (options: YTDLPDownloadOptions) => {
   const { url, output, type, fileFormat, subtitles, onProgress } = options
 
-  const formats = await listYTVideoFormats(url)
-
-  const ytdlpArgs = ["--no-playlist", "--concurrent-fragments=4", "--embed-metadata", "--embed-thumbnail"]
+  const ytdlpArgs = ["--no-playlist", "--concurrent-fragments=4", "--embed-metadata"]
   if (type === "audio") {
-    const bestAudio = formats.audioOnly[formats.audioOnly.length - 1]
-
-    ytdlpArgs.push(`--format=${bestAudio.id}`, "--extract-audio", "--audio-format=mp3", "--audio-quality=0")
+    ytdlpArgs.push("--format=bestaudio", "--extract-audio", "--audio-format=mp3", "--audio-quality=0", "--embed-thumbnail")
 
     if (fileFormat) {
       ytdlpArgs.push(`--audio-format=${fileFormat}`)
     }
   } else {
-    let quality = type
-
-    let selectedFormats = [] as (typeof formats)["videoOnly"][number][]
-    while (selectedFormats.length === 0) {
-      const resolution = quality.replace("p", "")
-      selectedFormats = formats.videoOnly.filter(f => f.resolution.endsWith(resolution))
-
-      switch (quality) {
-        case "1440p":
-          quality = "1080p"
-          break
-        case "1080p":
-          quality = "720p"
-          break
-      }
-    }
-
-    const bestVideo = selectedFormats[selectedFormats.length - 1]
-    const bestAudio = formats.audioOnly[formats.audioOnly.length - 1]
-
-    ytdlpArgs.push(`--format=${bestVideo.id}+${bestAudio.id}`)
+    const height = type.replace("p", "")
+    ytdlpArgs.push(`--format=bestvideo[height<=${height}]+bestaudio`)
 
     if (fileFormat) {
       ytdlpArgs.push(`--remux-video=${fileFormat}`)
@@ -161,8 +140,6 @@ const downloadVideo = async (options: YTDLPDownloadOptions) => {
   ytdlpArgs.push("--quiet", "--progress", "--newline")
 
   ytdlpArgs.push("--windows-filenames", `--output=${output}`, url.href)
-
-  console.log("yt-dlp", ...ytdlpArgs)
 
   const command = await createYTDLPCommand(ytdlpArgs)
 
