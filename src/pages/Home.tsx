@@ -16,11 +16,11 @@ import { createStorageSignal } from "@solid-primitives/storage"
 import * as dialog from "@tauri-apps/api/dialog"
 import { ResponseType, fetch } from "@tauri-apps/api/http"
 import { platform, tempdir } from "@tauri-apps/api/os"
-import { appCacheDir, dirname, downloadDir } from "@tauri-apps/api/path"
+import { appCacheDir, basename, dirname, downloadDir } from "@tauri-apps/api/path"
 import { Command, open } from "@tauri-apps/api/shell"
 import { invoke } from "@tauri-apps/api/tauri"
 import { UserAttentionType, appWindow } from "@tauri-apps/api/window"
-import { Component, ComponentProps, Show, createEffect, createSignal } from "solid-js"
+import { Component, ComponentProps, JSX, Show, createEffect, createSignal } from "solid-js"
 import { copyFile, createDir, pathExists, removeFile, writeFile } from "../lib/tauri-plugin-fs"
 import "./Home.scss"
 
@@ -80,7 +80,7 @@ class CancellationToken {
 }
 
 type YTDLPDownloadProgressEvent = {
-  url: string
+  url: URL
   title: string
   percentage: number
   downloaded: number
@@ -137,9 +137,12 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
     speed: string
   } | {
     type: "postprocess"
+    title: string
+    url: string
+    status: "started" | "finished"
   }
 
-  ytdlpArgs.push("--quiet", "--progress", "--progress-template=download:{\"type\":\"download\",\"title\":%(info.title)j,\"url\":%(info.webpage_url)j,\"status\":%(progress.status)j,\"downloadedBytes\":\"%(progress.downloaded_bytes)j\",\"totalBytes\":\"%(progress.total_bytes)j\",\"eta\":\"%(progress.eta)s\",\"speed\":\"%(progress.speed)j\"}", "--progress-template=postprocess:{\"type\":\"postprocess\",\"title\":%(info.title)j,\"url\":%(info.webpage_url)j,\"status\":%(progress.status)j}", "--newline")
+  ytdlpArgs.push("--quiet", "--progress", "--progress-template=download:{\"type\":\"download\",\"title\":%(info.title)j,\"url\":%(info.original_url)j,\"status\":%(progress.status)j,\"downloadedBytes\":\"%(progress.downloaded_bytes)j\",\"totalBytes\":\"%(progress.total_bytes)j\",\"eta\":\"%(progress.eta)s\",\"speed\":\"%(progress.speed)j\"}", "--progress-template=postprocess:{\"type\":\"postprocess\",\"title\":%(info.title)j,\"url\":%(info.original_url)j,\"status\":%(progress.status)j}", "--newline")
 
   const batchFile = await (async () => {
     // eslint-disable-next-line no-constant-condition
@@ -180,7 +183,26 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
       command.stdout.on("data", line => {
         try {
           const event = JSON.parse(line) as RawProgressEvent
+
           if (event.type === "postprocess") {
+            if (event.status !== "finished") {
+              return
+            }
+
+            onProgress?.({
+              url: new URL(event.url),
+              title: event.title,
+              percentage: 100,
+              downloaded: 0,
+              downloadedUnit: "MiB",
+              total: 0,
+              totalUnit: "MiB",
+              speed: 0,
+              speedUnit: "MiB/s",
+              eta: 0,
+              etaUnit: "s",
+            })
+
             return
           }
 
@@ -189,22 +211,28 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
           const eta = (event.eta === "NA") ? 0 : Number(event.eta)
           const speed = (event.speed === "NA") ? 0 : Number(event.speed)
 
-          const percentage = Math.floor((downloadedBytes / totalBytes) * 100)
-          if (percentage !== 0 && (percentage - state.percentage) < 1) {
+          const percentage = (() => {
+            if (totalBytes === 0) {
+              return 0
+            }
+
+            return Math.floor((downloadedBytes / totalBytes) * 100)
+          })()
+          if (percentage > 0 && (percentage - state.percentage) < 1) {
             return
           }
 
           state.percentage = percentage
 
           onProgress?.({
-            url: event.url,
+            url: new URL(event.url),
             title: event.title,
             percentage: Math.min(percentage, 100),
-            downloaded: Math.floor(downloadedBytes / 1024 / 1024),
+            downloaded: Math.floor(Math.max(downloadedBytes, 0) / 1024 / 1024),
             downloadedUnit: "MiB",
-            total: Math.floor(totalBytes / 1024 / 1024),
+            total: Math.floor(Math.max(totalBytes, 0) / 1024 / 1024),
             totalUnit: "MiB",
-            speed: Math.floor(speed / 1024 / 1024),
+            speed: Math.floor(Math.max(speed, 0) / 1024 / 1024),
             speedUnit: "MiB/s",
             eta: eta,
             etaUnit: "s",
@@ -236,18 +264,20 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
 }
 
 type ProgressToast = {
-  value: number
+  value: number | undefined
   max: number
-  text: string
+  children: JSX.Element
 }
 
 const ProgressToast: Component<ProgressToast> = props => {
   return (
     <div style={{ width: "96vw" }}>
       <div>
-        <Progress value={props.value} max={props.max} />
+        <Show when={props.value !== undefined} fallback={<Progress />}>
+          <Progress value={props.value} max={props.max} />
+        </Show>
       </div>
-      <pre>{props.text}</pre>
+      <pre>{props.children}</pre>
     </div>
   )
 }
@@ -259,21 +289,19 @@ const HomeView: Component = () => {
   const [urlList, setURLList] = createStorageSignal("URL_LIST", "")
   const [selectedQuality, setSelectedQuality] = createStorageSignal<(typeof selectableQualities)[number]>("SELECTED_QUALITY", "audio")
   const [selectedSubtitles, setSelectedSubtitles] = createStorageSignal("SELECTED_SUBTITLES", "")
-  const [downloadDirectory, setDownloadDirectory] = createStorageSignal("DOWNLOAD_DIRECTORY", "")
+  const [downloadPath, setDownloadPath] = createStorageSignal("DOWNLOAD_PATH", "")
 
   const [audioFileFormat, setAudioFileFormat] = createStorageSignal<(typeof selectableAudioFormats)[number]>("AUDIO_FILE_FORMAT", "mp3")
   const [videoFileFormat, setVideoFileFormat] = createStorageSignal<(typeof selectableVideoFormats)[number]>("VIDEO_FILE_FORMAT", "mkv")
 
   createEffect(async () => {
-    if (!downloadDirectory()) {
-      setDownloadDirectory(await downloadDir())
+    if (!downloadPath()) {
+      setDownloadPath(`${await downloadDir()}/%(title)s.%(ext)s`)
     }
   })
 
   const [urlsProgress, setURLsProgress] = createSignal(0)
-  const [urlsProgressText, setURLsProgressText] = createSignal("")
-  const [videoProgress, setVideoProgress] = createSignal(0)
-  const [videoProgressText, setVideoProgressText] = createSignal("")
+  const [videoProgress, setVideoProgress] = createSignal(undefined as YTDLPDownloadProgressEvent | undefined)
 
   const download = async () => {
     setDownloading(true)
@@ -286,9 +314,21 @@ const HomeView: Component = () => {
           throw new Error(`invalid value: ${quality}`)
         }
 
-        const urls = (urlList() ?? "").split("\n")
-          .filter(url => !!url.trim())
-          .map(url => new URL(url.trim()))
+        const urlsIncludingFails = (urlList() ?? "").split("\n")
+          .map(url => url.trim())
+          .map(url => {
+            if (!url) {
+              return undefined
+            }
+
+            try {
+              return new URL(url)
+            } catch {
+              return undefined
+            }
+          })
+        const urls = urlsIncludingFails
+          .filter(url => !!url) as URL[]
 
         const appWindowState = {
           focused: true,
@@ -305,13 +345,14 @@ const HomeView: Component = () => {
           }
 
           setURLsProgress(0)
-          setURLsProgressText(`downloading video ${1} out of ${urls.length}`)
 
           return Toaster.push({
             timeout: 0,
             closable: false, // TODO: true (for some reason killing the process does not work)
             children: (
-              <ProgressToast value={urlsProgress()} max={urls.length} text={urlsProgressText()} />
+              <ProgressToast value={urlsProgress()} max={urls.length}>
+                {`downloading video ${Math.min(urlsProgress() + 1, urls.length)} out of ${urls.length}`}
+              </ProgressToast>
             ),
             onclose: () => {
               cancellationToken.cancel()
@@ -319,47 +360,67 @@ const HomeView: Component = () => {
           })
         })()
 
-        setVideoProgress(0)
-        setVideoProgressText(`${"Unknown"}\n${0}% (${0}${"MiB"}) of (${0}${"MiB"}) at ${0}${"MiB/s"} ETA ${"N/A"}`)
+        setVideoProgress(undefined)
 
         const videoProgressToast = Toaster.push({
           timeout: 0,
           closable: false,
           children: (
-            <ProgressToast value={videoProgress()} max={100} text={videoProgressText()} />
+            <ProgressToast value={((videoProgress()?.percentage ?? 0) > 0) ? videoProgress()?.percentage : undefined} max={100}>
+              <Show when={videoProgress()} fallback={<div>Preparing download</div>}>
+                <div>{videoProgress()?.title}</div>
+                <Column.Row style={{ "max-width": "33rem" }}>
+                  <Column>{`${videoProgress()?.percentage ?? 0}%`}</Column>
+                  <Column>{`(${videoProgress()?.downloaded ?? 0}${videoProgress()?.downloadedUnit})`}</Column>
+                  <Column>of</Column>
+                  <Column>{`${videoProgress()?.total ?? 0}${videoProgress()?.totalUnit}`}</Column>
+                  <Column>at</Column>
+                  <Column>{`${videoProgress()?.speed ?? 0}${videoProgress()?.speedUnit}`}</Column>
+                  <Column>ETA</Column>
+                  <Column>{`${videoProgress()?.eta ?? 0}${videoProgress()?.etaUnit}`}</Column>
+                </Column.Row>
+              </Show>
+            </ProgressToast>
           ),
         })
 
         try {
-          let downloadedStreams = 0
+          const downloadState = {
+            url: undefined as URL | undefined,
+            done: [] as URL[],
+          }
+
+          const updateURLList = () => {
+            const doneHRefs = downloadState.done.map(url => url.href)
+            const allHRefs = urlsIncludingFails.map(url => url?.href ?? "")
+            setURLList(allHRefs.map(url => doneHRefs.includes(url) ? "" : url).join("\n"))
+          }
+          updateURLList()
+
           await downloadVideos({
             urls,
-            output: `${downloadDirectory()}/%(title)s.%(ext)s`,
+            output: downloadPath() ?? "",
             type: quality,
             fileFormat: ((quality === "audio") ? audioFileFormat() : videoFileFormat()) ?? undefined,
             subtitles,
             onProgress: event => {
-              setVideoProgress(event.percentage)
-              setVideoProgressText(`${event.title}\n${event.percentage}% (${event.downloaded}${event.downloadedUnit}) of ${event.total}${event.totalUnit} at ${event.speed}${event.speedUnit} ETA ${event.eta}${event.etaUnit}`)
+              setVideoProgress(event)
 
-              if (event.percentage >= 100) {
-                downloadedStreams += 1
+              if (downloadState.url !== undefined && event.url.href !== downloadState.url.href) {
+                downloadState.done.push(event.url)
 
-                if ((quality === "audio") || (downloadedStreams % 2 === 0)) {
-                  setURLsProgress(v => v + 1)
-
-                  if (urlsProgress() < urls.length) {
-                    setURLsProgressText(`downloading video ${urlsProgress() + 1} out of ${urls.length}`)
-                  }
-                }
+                setURLsProgress(v => v + 1)
+                updateURLList()
               }
+
+              downloadState.url = event.url
             },
             cancellationToken,
           })
 
-          setURLList("")
-
           Toaster.pushSuccess("downloaded")
+
+          setURLList("")
 
           unlistenFocusChanged()
           if (!appWindowState.focused) {
@@ -436,22 +497,33 @@ const HomeView: Component = () => {
   }
 
   const pickDownloadDirectory = async () => {
-    const newDownloadDirectory = await dialog.open({
-      defaultPath: downloadDirectory() ?? "",
-      directory: true,
-      recursive: false,
-      multiple: false,
-      title: "Download Directory",
-    })
-    if (!newDownloadDirectory) {
-      return
-    }
+    await Toaster.try(async () => {
+      const _downloadPath = downloadPath() ?? ""
+      const downloadDir = await dirname(_downloadPath)
+      const downloadPattern = await basename(_downloadPath)
 
-    setDownloadDirectory(newDownloadDirectory)
+      const newDownloadDirectory = await dialog.open({
+        defaultPath: downloadDir,
+        directory: true,
+        recursive: false,
+        multiple: false,
+        title: "Download Directory",
+      })
+      if (!newDownloadDirectory) {
+        return
+      }
+
+      setDownloadPath(`${newDownloadDirectory}/${downloadPattern}`)
+    })
   }
 
   const openDownloadDirectory = async () => {
-    open(downloadDirectory() ?? "")
+    await Toaster.try(async () => {
+      const _downloadPath = downloadPath() ?? ""
+      const downloadDir = await dirname(_downloadPath)
+
+      await open(downloadDir)
+    })
   }
 
   const onpaste: ComponentProps<"input">["onpaste"] = e => {
@@ -511,7 +583,7 @@ const HomeView: Component = () => {
             <Navbar style={{ "width": "100%" }}>
               <Navbar.Section>
                 <Input.Group style={{ "width": "100%" }}>
-                  <Input value={downloadDirectory() ?? ""} oninput={e => setDownloadDirectory(e.currentTarget.value)} ifEmpty={""} placeholder="Download Directory" disabled={downloading()} />
+                  <Input value={downloadPath() ?? ""} oninput={e => setDownloadPath(e.currentTarget.value)} ifEmpty={""} placeholder="Download Directory" disabled={downloading()} />
                   <Button onclick={pickDownloadDirectory} disabled={downloading()}>
                     <Icon src={iconFolder} />
                   </Button>
