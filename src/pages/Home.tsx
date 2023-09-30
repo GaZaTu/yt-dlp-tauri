@@ -547,16 +547,16 @@ const HomeView: Component = () => {
         <Column.Row>
           <Column>
             <Form.Group label={t("quality")}>
-              <Select2 options={selectableQualities as any} renderOption={o => o} stringifyOption={o => o} selected={selectedQuality()} onselect={o => setSelectedQuality(o)} disabled={downloading()} />
+              <Select2 options={selectableQualities as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={selectedQuality()} onselect={o => setSelectedQuality(o)} disabled={downloading()} />
             </Form.Group>
           </Column>
 
           <Column>
             <Form.Group label={t("fileFormat")}>
               <Show when={selectedQuality() === "audio"} fallback={
-                <Select2 options={selectableVideoFormats as any} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading()} />
+                <Select2 options={selectableVideoFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading()} />
               }>
-                <Select2 options={selectableAudioFormats as any} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
+                <Select2 options={selectableAudioFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
               </Show>
             </Form.Group>
           </Column>
