@@ -23,6 +23,7 @@ import { UserAttentionType, appWindow } from "@tauri-apps/api/window"
 import { Component, ComponentProps, JSX, Show, createEffect, createSignal } from "solid-js"
 import { copyFile, createDir, pathExists, removeFile, writeFile } from "../lib/tauri-plugin-fs"
 import "./Home.scss"
+import { t } from "../i18n"
 
 const tauriExeDir = async () => {
   return await dirname(await invoke<string>("env_current_exe"))
@@ -351,7 +352,7 @@ const HomeView: Component = () => {
             closable: false, // TODO: true (for some reason killing the process does not work)
             children: (
               <ProgressToast value={urlsProgress()} max={urls.length}>
-                {`downloading video ${Math.min(urlsProgress() + 1, urls.length)} out of ${urls.length}`}
+                {t("downloadingVideo", Math.min(urlsProgress() + 1, urls.length), urls.length)}
               </ProgressToast>
             ),
             onclose: () => {
@@ -367,7 +368,7 @@ const HomeView: Component = () => {
           closable: false,
           children: (
             <ProgressToast value={((videoProgress()?.percentage ?? 0) > 0) ? videoProgress()?.percentage : undefined} max={100}>
-              <Show when={videoProgress()} fallback={<div>Preparing download</div>}>
+              <Show when={videoProgress()} fallback={<div>{t("preparingDownload")}</div>}>
                 <div>{videoProgress()?.title}</div>
                 <Column.Row style={{ "max-width": "33rem" }}>
                   <Column>{`${videoProgress()?.percentage ?? 0}%`}</Column>
@@ -418,7 +419,7 @@ const HomeView: Component = () => {
             cancellationToken,
           })
 
-          Toaster.pushSuccess("downloaded")
+          Toaster.pushSuccess(t("downloadSuccessful"))
 
           setURLList("")
 
@@ -489,7 +490,7 @@ const HomeView: Component = () => {
           await writeFile(`${await tauriExeDir()}/${fileToWrite}`, response.data)
         }
 
-        Toaster.pushSuccess("updated yt-dlp")
+        Toaster.pushSuccess(t("updatedYTDLP"))
       })
     } finally {
       setUpdating(false)
@@ -507,7 +508,7 @@ const HomeView: Component = () => {
         directory: true,
         recursive: false,
         multiple: false,
-        title: "Download Directory",
+        title: t("pickDownloadDirectory"),
       })
       if (!newDownloadDirectory) {
         return
@@ -545,13 +546,13 @@ const HomeView: Component = () => {
       <Section class="HomeView" size="xl">
         <Column.Row>
           <Column>
-            <Form.Group label="Quality">
+            <Form.Group label={t("quality")}>
               <Select2 options={selectableQualities as any} renderOption={o => o} stringifyOption={o => o} selected={selectedQuality()} onselect={o => setSelectedQuality(o)} disabled={downloading()} />
             </Form.Group>
           </Column>
 
           <Column>
-            <Form.Group label="File Format">
+            <Form.Group label={t("fileFormat")}>
               <Show when={selectedQuality() === "audio"} fallback={
                 <Select2 options={selectableVideoFormats as any} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading()} />
               }>
@@ -561,13 +562,13 @@ const HomeView: Component = () => {
           </Column>
 
           <Column>
-            <Form.Group label="Subtitles (like: en)">
+            <Form.Group label={t("subtitles")}>
               <Input value={selectedSubtitles() ?? ""} oninput={e => setSelectedSubtitles(e.currentTarget.value)} ifEmpty={""} disabled={downloading() || selectedQuality() === "audio"} />
             </Form.Group>
           </Column>
         </Column.Row>
 
-        <Form.Group class="urls" label="URLs">
+        <Form.Group class="urls" label={t("links")}>
           <Input multiline value={urlList() ?? ""} oninput={e => setURLList(e.currentTarget.value)} onpaste={onpaste} ifEmpty={""} disabled={downloading()} />
         </Form.Group>
 
@@ -575,7 +576,7 @@ const HomeView: Component = () => {
           <Navbar.Section style={{ "max-width": "25%" }}>
             <Button onclick={updateYTDLP} loading={updating()} disabled={downloading()}>
               <Icon src={iconRefreshCw} />
-              <span>Update</span>
+              <span>{t("update")}</span>
             </Button>
           </Navbar.Section>
 
@@ -583,7 +584,7 @@ const HomeView: Component = () => {
             <Navbar style={{ "width": "100%" }}>
               <Navbar.Section>
                 <Input.Group style={{ "width": "100%" }}>
-                  <Input value={downloadPath() ?? ""} oninput={e => setDownloadPath(e.currentTarget.value)} ifEmpty={""} placeholder="Download Directory" disabled={downloading()} />
+                  <Input value={downloadPath() ?? ""} oninput={e => setDownloadPath(e.currentTarget.value)} ifEmpty={""} placeholder={t("downloadPath")} disabled={downloading()} />
                   <Button onclick={pickDownloadDirectory} disabled={downloading()}>
                     <Icon src={iconFolder} />
                   </Button>
@@ -596,7 +597,7 @@ const HomeView: Component = () => {
               <Navbar.Section style={{ "max-width": "25%" }}>
                 <Button color="primary" onclick={download} loading={downloading()} disabled={updating()}>
                   <Icon src={iconDownload} />
-                  <span>Download</span>
+                  <span>{t("download")}</span>
                 </Button>
               </Navbar.Section>
             </Navbar>
