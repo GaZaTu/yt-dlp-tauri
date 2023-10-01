@@ -98,33 +98,35 @@ type YTDLPDownloadOptions = {
   urls: URL[]
   output: string
   type: "audio" | "1440p" | "1080p" | "720p"
-  fileFormat?: string
+  videoFormat?: string
+  audioFormat?: string
   subtitles?: string
   onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
   cancellationToken?: CancellationToken
 }
 
 const downloadVideos = async (options: YTDLPDownloadOptions) => {
-  const { urls, output, type, fileFormat, subtitles, onProgress, cancellationToken } = options
+  const { urls, output, type, videoFormat, audioFormat, subtitles, onProgress, cancellationToken } = options
 
   const ytdlpArgs = ["--no-playlist", "--concurrent-fragments=4", "--embed-metadata"]
-  if (type === "audio") {
-    ytdlpArgs.push("--format=bestaudio", "--extract-audio", "--audio-format=mp3", "--audio-quality=0", "--embed-thumbnail")
 
-    if (fileFormat) {
-      ytdlpArgs.push(`--audio-format=${fileFormat}`)
-    }
+  if (type === "audio") {
+    ytdlpArgs.push("--format=bestaudio", "--extract-audio", "--audio-quality=0", "--embed-thumbnail")
   } else {
     const height = type.replace("p", "")
     ytdlpArgs.push(`--format=bestvideo[height<=${height}]+bestaudio`)
 
-    if (fileFormat) {
-      ytdlpArgs.push(`--remux-video=${fileFormat}`)
+    if (videoFormat) {
+      ytdlpArgs.push(`--remux-video=${videoFormat}`)
     }
 
     if (subtitles) {
       ytdlpArgs.push(`--sub-langs=${subtitles}.*`, "--embed-subs")
     }
+  }
+
+  if (audioFormat) {
+    ytdlpArgs.push(`--audio-format=${audioFormat}`)
   }
 
   type RawProgressEvent = {
@@ -294,6 +296,7 @@ const HomeView: Component = () => {
 
   const [audioFileFormat, setAudioFileFormat] = createStorageSignal<(typeof selectableAudioFormats)[number]>("AUDIO_FILE_FORMAT", "mp3")
   const [videoFileFormat, setVideoFileFormat] = createStorageSignal<(typeof selectableVideoFormats)[number]>("VIDEO_FILE_FORMAT", "mkv")
+  const [videoAudioFileFormat, setVideoAudioFileFormat] = createStorageSignal<(typeof selectableAudioFormats)[number]>("VIDEO_AUDIO_FILE_FORMAT", "opus")
 
   createEffect(async () => {
     if (!downloadPath()) {
@@ -402,7 +405,8 @@ const HomeView: Component = () => {
             urls,
             output: downloadPath() ?? "",
             type: quality,
-            fileFormat: ((quality === "audio") ? audioFileFormat() : videoFileFormat()) ?? undefined,
+            videoFormat: videoFileFormat() ?? undefined,
+            audioFormat: ((quality === "audio") ? audioFileFormat() : videoAudioFileFormat()) ?? undefined,
             subtitles,
             onProgress: event => {
               setVideoProgress(event)
@@ -552,9 +556,15 @@ const HomeView: Component = () => {
           </Column>
 
           <Column>
-            <Form.Group label={t("fileFormat")}>
+            <Form.Group label={t("videoFormat")}>
+              <Select2 options={selectableVideoFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading() || selectedQuality() === "audio"} />
+            </Form.Group>
+          </Column>
+
+          <Column>
+            <Form.Group label={t("audioFormat")}>
               <Show when={selectedQuality() === "audio"} fallback={
-                <Select2 options={selectableVideoFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading()} />
+                <Select2 options={selectableAudioFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoAudioFileFormat()} onselect={o => setVideoAudioFileFormat(o)} disabled={downloading()} />
               }>
                 <Select2 options={selectableAudioFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
               </Show>
