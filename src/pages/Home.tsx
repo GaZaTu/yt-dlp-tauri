@@ -35,8 +35,10 @@ const isAppImage = async () => {
 }
 
 const selectableQualities = ["audio", "1440p", "1080p", "720p"] as const
-const selectableAudioFormats = ["flac", "mp3", "opus"] as const
-const selectableVideoFormats = ["mp4", "mkv"] as const
+const selectableAudioFileFormats = ["flac", "mp3", "opus", "m4a"] as const
+const selectableVideoFileFormats = ["mp4", "mkv"] as const
+const selectableVideoCodecs = ["", "vp09", "av01", "avc1"] as const // ["", "h264+aac"] as const
+const selectableVideoAudioCodecs = ["", "opus", "mp4a"] as const
 
 const getFFMPEGLocation = async () => {
   if (await isAppImage() && await pathExists(`${await appCacheDir()}/ffmpeg`)) {
@@ -98,23 +100,28 @@ type YTDLPDownloadOptions = {
   urls: URL[]
   output: string
   type: "audio" | "1440p" | "1080p" | "720p"
-  videoFormat?: string
   audioFormat?: string
+  videoFormat?: string
+  videoCodec?: string // (typeof selectableVideoCodecs)[number]
   subtitles?: string
   onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
   cancellationToken?: CancellationToken
 }
 
 const downloadVideos = async (options: YTDLPDownloadOptions) => {
-  const { urls, output, type, videoFormat, audioFormat, subtitles, onProgress, cancellationToken } = options
+  const { urls, output, type, audioFormat, videoFormat, videoCodec, subtitles, onProgress, cancellationToken } = options
 
   const ytdlpArgs = ["--no-playlist", "--concurrent-fragments=4", "--embed-metadata"]
 
   if (type === "audio") {
     ytdlpArgs.push("--format=bestaudio", "--extract-audio", "--audio-quality=0", "--embed-thumbnail")
+
+    if (audioFormat) {
+      ytdlpArgs.push(`--audio-format=${audioFormat}`)
+    }
   } else {
     const height = type.replace("p", "")
-    ytdlpArgs.push(`--format=bestvideo[height<=${height}]+bestaudio`)
+    ytdlpArgs.push(`--format=bestvideo[height<=${height}]${videoCodec ? `[vcodec^=${videoCodec}]` : ""}+bestaudio${audioFormat ? `[acodec^=${audioFormat}]` : ""}`)
 
     if (videoFormat) {
       ytdlpArgs.push(`--remux-video=${videoFormat}`)
@@ -123,10 +130,6 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
     if (subtitles) {
       ytdlpArgs.push(`--sub-langs=${subtitles}.*`, "--embed-subs")
     }
-  }
-
-  if (audioFormat) {
-    ytdlpArgs.push(`--audio-format=${audioFormat}`)
   }
 
   type RawProgressEvent = {
@@ -160,7 +163,13 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
     }
   })()
 
-  ytdlpArgs.push("--windows-filenames", `--output=${output}`, `--batch-file=${batchFile}`)
+  ytdlpArgs.push("--windows-filenames", `--output=${output}`)
+
+  if (urls.length === 1) {
+    ytdlpArgs.push(urls[0].href)
+  } else {
+    ytdlpArgs.push(`--batch-file=${batchFile}`)
+  }
 
   try {
     const command = await createYTDLPCommand(ytdlpArgs)
@@ -294,9 +303,10 @@ const HomeView: Component = () => {
   const [selectedSubtitles, setSelectedSubtitles] = createStorageSignal("SELECTED_SUBTITLES", "")
   const [downloadPath, setDownloadPath] = createStorageSignal("DOWNLOAD_PATH", "")
 
-  const [audioFileFormat, setAudioFileFormat] = createStorageSignal<(typeof selectableAudioFormats)[number]>("AUDIO_FILE_FORMAT", "mp3")
-  const [videoFileFormat, setVideoFileFormat] = createStorageSignal<(typeof selectableVideoFormats)[number]>("VIDEO_FILE_FORMAT", "mkv")
-  const [videoAudioFileFormat, setVideoAudioFileFormat] = createStorageSignal<(typeof selectableAudioFormats)[number]>("VIDEO_AUDIO_FILE_FORMAT", "opus")
+  const [audioFileFormat, setAudioFileFormat] = createStorageSignal<(typeof selectableAudioFileFormats)[number]>("AUDIO_FILE_FORMAT", "mp3")
+  const [videoFileFormat, setVideoFileFormat] = createStorageSignal<(typeof selectableVideoFileFormats)[number]>("VIDEO_FILE_FORMAT", "mkv")
+  const [videoCodec, setVideoCodec] = createStorageSignal<(typeof selectableVideoCodecs)[number]>("VIDEO_CODEC", "")
+  const [videoAudioCodec, setVideoAudioCodec] = createStorageSignal<(typeof selectableVideoAudioCodecs)[number]>("VIDEO_AUDIO_CODEC", "")
 
   createEffect(async () => {
     if (!downloadPath()) {
@@ -405,8 +415,9 @@ const HomeView: Component = () => {
             urls,
             output: downloadPath() ?? "",
             type: quality,
+            audioFormat: ((quality === "audio") ? audioFileFormat() : videoAudioCodec()) ?? undefined,
             videoFormat: videoFileFormat() ?? undefined,
-            audioFormat: ((quality === "audio") ? audioFileFormat() : videoAudioFileFormat()) ?? undefined,
+            videoCodec: videoCodec() ?? undefined,
             subtitles,
             onProgress: event => {
               setVideoProgress(event)
@@ -557,18 +568,26 @@ const HomeView: Component = () => {
 
           <Column>
             <Form.Group label={t("videoFormat")}>
-              <Select2 options={selectableVideoFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading() || selectedQuality() === "audio"} />
+              <Select2 options={selectableVideoFileFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading() || selectedQuality() === "audio"} />
             </Form.Group>
           </Column>
 
           <Column>
-            <Form.Group label={t("audioFormat")}>
-              <Show when={selectedQuality() === "audio"} fallback={
-                <Select2 options={selectableAudioFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoAudioFileFormat()} onselect={o => setVideoAudioFileFormat(o)} disabled={downloading()} />
-              }>
-                <Select2 options={selectableAudioFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
-              </Show>
+            <Form.Group label={t("videoCodec")}>
+              <Select2 options={selectableVideoCodecs as any} keyofOption={o => o} renderOption={o => o ? o : "auto"} stringifyOption={o => o ? o : "auto"} selected={videoCodec()} onselect={o => setVideoCodec(o)} disabled={downloading() || selectedQuality() === "audio"} />
             </Form.Group>
+          </Column>
+
+          <Column>
+            <Show when={selectedQuality() === "audio"} fallback={
+              <Form.Group label={t("audioCodec")}>
+                <Select2 options={selectableVideoAudioCodecs as any} keyofOption={o => o} renderOption={o => o ? o : "auto"} stringifyOption={o => o ? o : "auto"} selected={videoAudioCodec()} onselect={o => setVideoAudioCodec(o)} disabled={downloading()} />
+              </Form.Group>
+            }>
+              <Form.Group label={t("audioFormat")}>
+                <Select2 options={selectableAudioFileFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
+              </Form.Group>
+            </Show>
           </Column>
 
           <Column>
