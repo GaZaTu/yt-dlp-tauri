@@ -37,8 +37,8 @@ const isAppImage = async () => {
 const selectableQualities = ["audio", "1440p", "1080p", "720p"] as const
 const selectableAudioFileFormats = ["flac", "mp3", "opus", "m4a"] as const
 const selectableVideoFileFormats = ["mp4", "mkv"] as const
-const selectableVideoCodecs = ["", "vp09", "av01", "avc1"] as const // ["", "h264+aac"] as const
-const selectableVideoAudioCodecs = ["", "opus", "mp4a"] as const
+const selectableVideoCodecs = ["", "vp09", "av01", "avc1 (h264)"] as const
+const selectableVideoAudioCodecs = ["", "opus", "mp4a (aac)"] as const
 
 const getFFMPEGLocation = async () => {
   if (await isAppImage() && await pathExists(`${await appCacheDir()}/ffmpeg`)) {
@@ -102,7 +102,7 @@ type YTDLPDownloadOptions = {
   type: "audio" | "1440p" | "1080p" | "720p"
   audioFormat?: string
   videoFormat?: string
-  videoCodec?: string // (typeof selectableVideoCodecs)[number]
+  videoCodec?: string
   subtitles?: string
   onProgress?: (event: YTDLPDownloadProgressEvent) => unknown
   cancellationToken?: CancellationToken
@@ -120,8 +120,11 @@ const downloadVideos = async (options: YTDLPDownloadOptions) => {
       ytdlpArgs.push(`--audio-format=${audioFormat}`)
     }
   } else {
+    const videoCodecFilter = videoCodec ? `[vcodec^=${videoCodec.split(" ", 1)[0]}]` : ""
+    const audioCodecFilter = audioFormat ? `[acodec^=${audioFormat.split(" ", 1)[0]}]` : ""
+
     const height = type.replace("p", "")
-    ytdlpArgs.push(`--format=bestvideo[height<=${height}]${videoCodec ? `[vcodec^=${videoCodec}]` : ""}+bestaudio${audioFormat ? `[acodec^=${audioFormat}]` : ""}`)
+    ytdlpArgs.push(`--format=bestvideo[height<=${height}]${videoCodecFilter}+bestaudio${audioCodecFilter}`)
 
     if (videoFormat) {
       ytdlpArgs.push(`--remux-video=${videoFormat}`)
