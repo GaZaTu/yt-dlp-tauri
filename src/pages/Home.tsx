@@ -570,9 +570,15 @@ const HomeView: Component = () => {
           </Column>
 
           <Column>
-            <Form.Group label={t("videoFormat")}>
-              <Select2 options={selectableVideoFileFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading() || selectedQuality() === "audio"} />
-            </Form.Group>
+            <Show when={selectedQuality() === "audio"} fallback={
+              <Form.Group label={t("videoFormat")}>
+                <Select2 options={selectableVideoFileFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={videoFileFormat()} onselect={o => setVideoFileFormat(o)} disabled={downloading()} />
+              </Form.Group>
+            }>
+              <Form.Group label={t("audioFormat")}>
+                <Select2 options={selectableAudioFileFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
+              </Form.Group>
+            </Show>
           </Column>
 
           <Column>
@@ -582,15 +588,9 @@ const HomeView: Component = () => {
           </Column>
 
           <Column>
-            <Show when={selectedQuality() === "audio"} fallback={
-              <Form.Group label={t("audioCodec")}>
-                <Select2 options={selectableVideoAudioCodecs as any} keyofOption={o => o} renderOption={o => o ? o : "auto"} stringifyOption={o => o ? o : "auto"} selected={videoAudioCodec()} onselect={o => setVideoAudioCodec(o)} disabled={downloading()} />
-              </Form.Group>
-            }>
-              <Form.Group label={t("audioFormat")}>
-                <Select2 options={selectableAudioFileFormats as any} keyofOption={o => o} renderOption={o => o} stringifyOption={o => o} selected={audioFileFormat()} onselect={o => setAudioFileFormat(o)} disabled={downloading()} />
-              </Form.Group>
-            </Show>
+            <Form.Group label={t("audioCodec")}>
+              <Select2 options={selectableVideoAudioCodecs as any} keyofOption={o => o} renderOption={o => o ? o : "auto"} stringifyOption={o => o ? o : "auto"} selected={videoAudioCodec()} onselect={o => setVideoAudioCodec(o)} disabled={downloading() || selectedQuality() === "audio"} />
+            </Form.Group>
           </Column>
 
           <Column>
