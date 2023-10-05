@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "ytdlptauri",
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "tauri": {
     "allowlist": {
@@ -103,7 +103,7 @@
       "csp": null
     },
     "updater": {
-      "active": true,
+      "active": false,
       "dialog": true,
       "endpoints": [
         "https://dl.gazatu.xyz/releases/xyz.gazatu.ytdlptauri/latest/{{target}}?client-version={{current_version}}"
