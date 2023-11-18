@@ -90,3 +90,11 @@ body {
 .form-select:disabled {
   background-color: var(--body-bg-monochrome) !important;
 }
+
+html .form-input {
+  background: var(--form-input-background, var(--body-bg));
+}
+
+html .btn {
+  background: var(--btn-background, var(--body-bg-monochrome));
+}
